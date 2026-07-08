@@ -138,9 +138,20 @@ jobs:
           mv ~/.ssh/known_hosts.new ~/.ssh/known_hosts
 
           archive="octopus-${GITHUB_SHA}-${TARGET_ARCH}.tgz"
-          sshpass -e scp -P "$JD_PORT" -o StrictHostKeyChecking=yes "$archive" "$JD_USER@$JD_HOST:/tmp/$archive"
+          echo "Uploading $archive to $JD_USER@$JD_HOST:/tmp/$archive ..."
+          timeout 180s sshpass -e scp -P "$JD_PORT" \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=2 \
+            "$archive" "$JD_USER@$JD_HOST:/tmp/$archive"
+          echo "Upload completed."
 
-          sshpass -e ssh -p "$JD_PORT" -o StrictHostKeyChecking=yes "$JD_USER@$JD_HOST" \
+          echo "Running remote deploy script ..."
+          timeout 300s sshpass -e ssh -p "$JD_PORT" -o StrictHostKeyChecking=yes "$JD_USER@$JD_HOST" \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=2 \
             "DEPLOY_SHA='$GITHUB_SHA' DEPLOY_ARCHIVE='/tmp/$archive' JD_APP_DIR='$JD_APP_DIR' JD_SERVICE_NAME='$JD_SERVICE_NAME' OCTOPUS_SERVER_PORT='$OCTOPUS_SERVER_PORT' bash -s" <<'REMOTE'
           set -euo pipefail
 
