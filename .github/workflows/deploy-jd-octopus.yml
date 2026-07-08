@@ -1,0 +1,209 @@
+name: Deploy JD Cloud Octopus
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+    inputs:
+      target_arch:
+        description: "Linux architecture to deploy"
+        required: false
+        default: amd64
+        type: choice
+        options:
+          - amd64
+          - arm64
+
+concurrency:
+  group: deploy-jd-octopus-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      JD_HOST: ${{ secrets.JD_HOST }}
+      JD_PORT: ${{ secrets.JD_PORT || '22' }}
+      JD_USER: ${{ secrets.JD_USER || 'root' }}
+      JD_APP_DIR: ${{ secrets.JD_APP_DIR || '/opt/octopus' }}
+      JD_SERVICE_NAME: ${{ secrets.JD_SERVICE_NAME || 'octopus' }}
+      JD_PUBLIC_URL: ${{ secrets.JD_PUBLIC_URL }}
+      JD_HOST_FINGERPRINT: ${{ secrets.JD_HOST_FINGERPRINT }}
+      OCTOPUS_SERVER_PORT: ${{ secrets.OCTOPUS_SERVER_PORT || '8080' }}
+      SSHPASS: ${{ secrets.JD_SSH_PASSWORD }}
+      TARGET_ARCH: ${{ github.event.inputs.target_arch || secrets.JD_TARGET_ARCH || 'amd64' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          NEXT_PUBLIC_APP_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')" pnpm build
+
+      - name: Embed frontend
+        run: |
+          rm -rf static/out
+          mv web/out static/out
+
+      - name: Build Linux binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$TARGET_ARCH" in
+            amd64|arm64) ;;
+            *)
+              echo "::error::TARGET_ARCH must be amd64 or arm64"
+              exit 1
+              ;;
+          esac
+
+          mkdir -p build/deploy
+          BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
+          GIT_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')"
+          COMMIT_ID="$(git rev-parse --short HEAD)"
+          LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${GIT_VERSION}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Author=hureru' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}' \
+                   -s -w"
+
+          GOOS=linux GOARCH="$TARGET_ARCH" CGO_ENABLED=0 \
+            go build -o build/deploy/octopus -ldflags="${LDFLAGS}" -tags=jsoniter ./
+          chmod +x build/deploy/octopus
+          tar -C build/deploy -czf "octopus-${GITHUB_SHA}-${TARGET_ARCH}.tgz" octopus
+
+      - name: Deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for name in JD_HOST JD_PORT JD_USER JD_APP_DIR JD_SERVICE_NAME SSHPASS OCTOPUS_SERVER_PORT; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is required"
+              exit 1
+            fi
+          done
+
+          case "$JD_APP_DIR" in
+            /opt/octopus|/opt/octopus/*) ;;
+            *)
+              echo "::error::JD_APP_DIR must be /opt/octopus or a child directory"
+              exit 1
+              ;;
+          esac
+
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$JD_PORT" "$JD_HOST" > ~/.ssh/known_hosts.new
+          if [ -n "${JD_HOST_FINGERPRINT:-}" ]; then
+            if ! ssh-keygen -lf ~/.ssh/known_hosts.new -E sha256 | awk '{print $2}' | grep -Fx "$JD_HOST_FINGERPRINT"; then
+              echo "::error::Host key fingerprint mismatch"
+              ssh-keygen -lf ~/.ssh/known_hosts.new -E sha256 || true
+              exit 1
+            fi
+          fi
+          mv ~/.ssh/known_hosts.new ~/.ssh/known_hosts
+
+          archive="octopus-${GITHUB_SHA}-${TARGET_ARCH}.tgz"
+          sshpass -e scp -P "$JD_PORT" -o StrictHostKeyChecking=yes "$archive" "$JD_USER@$JD_HOST:/tmp/$archive"
+
+          sshpass -e ssh -p "$JD_PORT" -o StrictHostKeyChecking=yes "$JD_USER@$JD_HOST" \
+            "DEPLOY_SHA='$GITHUB_SHA' DEPLOY_ARCHIVE='/tmp/$archive' JD_APP_DIR='$JD_APP_DIR' JD_SERVICE_NAME='$JD_SERVICE_NAME' OCTOPUS_SERVER_PORT='$OCTOPUS_SERVER_PORT' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          app_dir="$JD_APP_DIR"
+          service="$JD_SERVICE_NAME"
+          archive="$DEPLOY_ARCHIVE"
+          release="$app_dir/releases/$DEPLOY_SHA"
+          backup_dir="/var/backups/octopus"
+
+          case "$app_dir" in
+            /opt/octopus|/opt/octopus/*) ;;
+            *)
+              echo "Refuse to deploy outside /opt/octopus: $app_dir"
+              exit 1
+              ;;
+          esac
+
+          test -f "$archive"
+          mkdir -p "$app_dir/releases" "$app_dir/data" "$backup_dir"
+          rm -rf "$release"
+          mkdir -p "$release"
+          tar -xzf "$archive" -C "$release"
+          test -x "$release/octopus"
+
+          if [ -e "$app_dir/current/octopus" ]; then
+            cp -a "$app_dir/current/octopus" "$backup_dir/octopus-$(date +%Y%m%d%H%M%S)"
+          fi
+
+          ln -sfn "$release" "$app_dir/current"
+
+          cat > "/etc/systemd/system/${service}.service" <<SERVICE
+          [Unit]
+          Description=Octopus LLM API Gateway
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          WorkingDirectory=${app_dir}
+          ExecStart=${app_dir}/current/octopus start --config ${app_dir}/data/config.json
+          Restart=always
+          RestartSec=5
+          Environment=OCTOPUS_SERVER_HOST=0.0.0.0
+          Environment=OCTOPUS_SERVER_PORT=${OCTOPUS_SERVER_PORT}
+
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE
+
+          systemctl daemon-reload
+          systemctl enable "$service"
+          systemctl restart "$service"
+          systemctl --no-pager --full status "$service"
+
+          rm -f "$archive"
+          find "$app_dir/releases" -mindepth 1 -maxdepth 1 -type d | sort | head -n -5 | xargs -r rm -rf
+          echo "Deployed $DEPLOY_SHA to $app_dir"
+          REMOTE
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          public_url="${JD_PUBLIC_URL:-http://${JD_HOST}:${OCTOPUS_SERVER_PORT}}"
+          curl -fsS -o /tmp/octopus-index.html "$public_url/?sha=${GITHUB_SHA}"
+          grep -qi '<html' /tmp/octopus-index.html
