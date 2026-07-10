@@ -46,6 +46,11 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
+      - name: Set App Version
+        run: |
+          VERSION="$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD)"
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
@@ -68,7 +73,7 @@ jobs:
         working-directory: web
         run: |
           pnpm install --frozen-lockfile
-          NEXT_PUBLIC_APP_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')" pnpm build
+          NEXT_PUBLIC_APP_VERSION="${{ env.APP_VERSION }}" pnpm build
 
       - name: Embed frontend
         run: |
@@ -190,7 +195,7 @@ jobs:
 
           echo "Compiling on remote server using $go_cmd..."
           BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
-          GIT_VERSION="${DEPLOY_SHA::7}"
+          GIT_VERSION="${{ env.APP_VERSION }}"
           LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${GIT_VERSION}' \
                    -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' \
                    -X 'github.com/bestruirui/octopus/internal/conf.Author=hureru' \
