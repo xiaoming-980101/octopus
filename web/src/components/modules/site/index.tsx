@@ -602,12 +602,14 @@ export function Site() {
   const [lastImportResult, setLastImportResult] =
     useState<SiteImportResult | null>(null);
   const [editingSite, setEditingSite] = useState<SiteRecord | null>(null);
+  const [siteDialogInstance, setSiteDialogInstance] = useState(0);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountSite, setAccountSite] = useState<SiteRecord | null>(null);
   const [editingAccount, setEditingAccount] = useState<SiteAccount | null>(
     null,
   );
+  const [accountDialogInstance, setAccountDialogInstance] = useState(0);
 
   // Batch selection
   const [selectedSiteIds, setSelectedSiteIds] = useState<number[]>([]);
@@ -936,11 +938,13 @@ export function Site() {
 
   function openCreateSiteDialog() {
     setEditingSite(null);
+    setSiteDialogInstance((current) => current + 1);
     setSiteDialogOpen(true);
   }
 
   function openEditSiteDialog(site: SiteRecord) {
     setEditingSite(site);
+    setSiteDialogInstance((current) => current + 1);
     setSiteDialogOpen(true);
   }
 
@@ -954,12 +958,14 @@ export function Site() {
   function openCreateAccountDialog(site: SiteRecord) {
     setAccountSite(site);
     setEditingAccount(null);
+    setAccountDialogInstance((current) => current + 1);
     setAccountDialogOpen(true);
   }
 
   function openEditAccountDialog(site: SiteRecord, account: SiteAccount) {
     setAccountSite(site);
     setEditingAccount(account);
+    setAccountDialogInstance((current) => current + 1);
     setAccountDialogOpen(true);
   }
 
@@ -1257,6 +1263,7 @@ export function Site() {
     setSiteHandlers({
       openCreateDialog: () => {
         setEditingSite(null);
+        setSiteDialogInstance((current) => current + 1);
         setSiteDialogOpen(true);
       },
       openImportDialog: () => setImportDialogOpen(true),
@@ -2112,7 +2119,7 @@ export function Site() {
       </PageWrapper>
 
       <SiteEditDialog
-        key={editingSite ? `edit-site-${editingSite.id}` : "create-site"}
+        key={`site-dialog-${editingSite?.id ?? "create"}-${siteDialogInstance}`}
         open={siteDialogOpen}
         onOpenChange={closeSiteDialog}
         site={editingSite}
@@ -2129,13 +2136,7 @@ export function Site() {
       />
 
       <AccountEditDialog
-        key={
-          editingAccount
-            ? `edit-site-account-${editingAccount.id}`
-            : accountSite
-              ? `create-site-account-${accountSite.id}`
-              : "site-account"
-        }
+        key={`site-account-dialog-${editingAccount?.id ?? accountSite?.id ?? "create"}-${accountDialogInstance}`}
         open={accountDialogOpen}
         onOpenChange={closeAccountDialog}
         site={accountSite}
