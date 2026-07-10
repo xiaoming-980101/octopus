@@ -139,7 +139,7 @@ jobs:
 
           archive="octopus-${GITHUB_SHA}-${TARGET_ARCH}.tgz"
           echo "Uploading $archive to $JD_USER@$JD_HOST:/tmp/$archive ..."
-          timeout 180s sshpass -e scp -P "$JD_PORT" \
+          timeout 900s sshpass -e scp -P "$JD_PORT" \
             -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=20 \
             -o ServerAliveInterval=15 \
