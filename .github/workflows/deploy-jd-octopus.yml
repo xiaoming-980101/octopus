@@ -80,28 +80,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          case "$TARGET_ARCH" in
-            amd64|arm64) ;;
-            *)
-              echo "::error::TARGET_ARCH must be amd64 or arm64"
-              exit 1
-              ;;
-          esac
-
           mkdir -p build/deploy
-          BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
-          GIT_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')"
-          COMMIT_ID="$(git rev-parse --short HEAD)"
-          LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${GIT_VERSION}' \
-                   -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' \
-                   -X 'github.com/bestruirui/octopus/internal/conf.Author=hureru' \
-                   -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}' \
-                   -s -w"
-
-          GOOS=linux GOARCH="$TARGET_ARCH" CGO_ENABLED=0 \
-            go build -o build/deploy/octopus -ldflags="${LDFLAGS}" -tags=jsoniter ./
-          chmod +x build/deploy/octopus
-          tar -C build/deploy -czf "octopus-${GITHUB_SHA}-${TARGET_ARCH}.tgz" octopus
+          # 将 Go 后端源码以及 static 目录打包为 octopus-${GITHUB_SHA}-${TARGET_ARCH}.tgz
+          tar -czf "octopus-${GITHUB_SHA}-${TARGET_ARCH}.tgz" main.go go.mod go.sum internal cmd static
 
       - name: Deploy
         shell: bash
@@ -177,7 +158,51 @@ jobs:
           rm -rf "$release"
           mkdir -p "$release"
           tar -xzf "$archive" -C "$release"
+
+          # 远程 Go 1.25.0 编译器环境检测与安装
+          go_cmd="go"
+          if ! command -v go &>/dev/null; then
+            if [ -x "/usr/local/go/bin/go" ]; then
+              go_cmd="/usr/local/go/bin/go"
+            else
+              echo "Go not found. Installing green Go 1.25.0..."
+              wget -O /tmp/go1.25.0.linux-amd64.tar.gz https://mirrors.aliyun.com/golang/go1.25.0.linux-amd64.tar.gz || \
+              curl -o /tmp/go1.25.0.linux-amd64.tar.gz https://mirrors.aliyun.com/golang/go1.25.0.linux-amd64.tar.gz
+              mkdir -p /tmp/go_temp
+              tar -C /tmp/go_temp -xzf /tmp/go1.25.0.linux-amd64.tar.gz
+              go_cmd="/tmp/go_temp/go/bin/go"
+            fi
+          else
+            go_ver=$("$go_cmd" version | awk '{print $3}' | sed 's/go//')
+            if [ "$(printf '%s\n' "1.25.0" "$go_ver" | sort -V | head -n1)" = "1.25.0" ] && [ "$go_ver" != "1.25.0" ]; then
+              if [ -x "/tmp/go_temp/go/bin/go" ]; then
+                go_cmd="/tmp/go_temp/go/bin/go"
+              else
+                echo "Current Go version is $go_ver (lower than 1.25.0). Downloading green Go 1.25.0..."
+                wget -O /tmp/go1.25.0.linux-amd64.tar.gz https://mirrors.aliyun.com/golang/go1.25.0.linux-amd64.tar.gz || \
+                curl -o /tmp/go1.25.0.linux-amd64.tar.gz https://mirrors.aliyun.com/golang/go1.25.0.linux-amd64.tar.gz
+                mkdir -p /tmp/go_temp
+                tar -C /tmp/go_temp -xzf /tmp/go1.25.0.linux-amd64.tar.gz
+                go_cmd="/tmp/go_temp/go/bin/go"
+              fi
+            fi
+          fi
+
+          echo "Compiling on remote server using $go_cmd..."
+          BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
+          GIT_VERSION="${DEPLOY_SHA::7}"
+          LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${GIT_VERSION}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Author=hureru' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Commit=${DEPLOY_SHA::7}' \
+                   -s -w"
+
+          cd "$release"
+          GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 "$go_cmd" build -o octopus -ldflags="${LDFLAGS}" -tags=jsoniter ./
+          chmod +x "$release/octopus"
           test -x "$release/octopus"
+
+          cd "$app_dir"
 
           if [ -e "$app_dir/current/octopus" ]; then
             cp -a "$app_dir/current/octopus" "$backup_dir/octopus-$(date +%Y%m%d%H%M%S)"
