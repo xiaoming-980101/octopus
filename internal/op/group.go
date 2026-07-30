@@ -25,6 +25,9 @@ func GroupList(ctx context.Context) ([]model.Group, error) {
 func GroupListModel(ctx context.Context) ([]string, error) {
 	models := []string{}
 	for _, group := range groupCache.GetAll() {
+		if group.Disabled {
+			continue
+		}
 		models = append(models, group.Name)
 	}
 	return models, nil
@@ -119,6 +122,11 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		selectFields = append(selectFields, "max_retries")
 		updates.MaxRetries = v
 	}
+	if req.Disabled != nil {
+		selectFields = append(selectFields, "disabled")
+		updates.Disabled = *req.Disabled
+	}
+
 
 	if len(selectFields) > 0 {
 		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Select(selectFields).Updates(&updates).Error; err != nil {

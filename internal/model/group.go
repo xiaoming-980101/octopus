@@ -23,6 +23,7 @@ type Group struct {
 	Pinned            bool        `json:"pinned" gorm:"default:false;index"`  // 置顶
 	PinnedAt          *time.Time  `json:"pinned_at,omitempty"`                // 置顶时间，置顶时写入，取消置顶时置空
 	ActivePresetID    *int        `json:"active_preset_id,omitempty"`         // 当前激活的预设ID，仅 UI 标记，不参与路由
+	Disabled          bool        `json:"disabled" gorm:"default:false"`      // 是否禁用分组
 	Items             []GroupItem `json:"items,omitempty" gorm:"foreignKey:GroupID"`
 }
 
@@ -71,6 +72,7 @@ type GroupUpdateRequest struct {
 	SessionKeepTime   *int                     `json:"session_keep_time,omitempty"`    // 仅在会话保持时间变更时发送(秒)
 	RetryEnabled      *bool                    `json:"retry_enabled,omitempty"`        // 启用同通道重试+透传429/503
 	MaxRetries        *int                     `json:"max_retries,omitempty"`          // 同通道最大重试次数
+	Disabled          *bool                    `json:"disabled,omitempty"`             // 仅在禁用状态变更时发送
 	ItemsToAdd        []GroupItemAddRequest    `json:"items_to_add,omitempty"`         // 新增的 items
 	ItemsToUpdate     []GroupItemUpdateRequest `json:"items_to_update,omitempty"`      // 更新的 items (priority 变更)
 	ItemsToDelete     []int                    `json:"items_to_delete,omitempty"`      // 删除的 item IDs
@@ -158,3 +160,22 @@ type GroupAutoGroupConfigUpdateRequest struct {
 type GroupAutoGroupRunRequest struct {
 	ChannelIDs []int `json:"channel_ids,omitempty"`
 }
+
+// GroupAutoRebuildOptions 一键分组选项
+type GroupAutoRebuildOptions struct {
+	// StripProviderPrefix 去除 Provider 前缀：将 "z-ai/glm-5.2" 的组名规范化为 "glm-5.2"，
+	// 并自动设置 MatchRegex 兼容带前缀的请求。
+	StripProviderPrefix bool `json:"strip_provider_prefix"`
+
+	// FreeModelWeight 对名称包含 "free" 的模型赋予更高权重（0 表示不启用）。
+	// 典型值：10（普通模型 Weight=1，free 模型 Weight=FreeModelWeight）
+	FreeModelWeight int `json:"free_model_weight"`
+}
+
+type GroupAutoRebuildResult struct {
+	CreatedGroups int `json:"created_groups"`
+	UpdatedGroups int `json:"updated_groups"`
+	AddedItems    int `json:"added_items"`
+	TotalGroups   int `json:"total_groups"`
+}
+

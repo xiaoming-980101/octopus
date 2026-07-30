@@ -6,6 +6,7 @@ import {
     ArrowDownZA,
     ArrowUpAZ,
     ArrowUpNarrowWide,
+    Boxes,
     Clock3,
     KeyRound,
     LayoutGrid,
@@ -32,6 +33,7 @@ import { useNavStore, type NavItem } from '@/components/modules/navbar';
 import { CreateDialogContent as ChannelCreateContent } from '@/components/modules/channel/Create';
 import { CreateDialogContent as GroupCreateContent } from '@/components/modules/group/Create';
 import { GroupAutoGroupDialogContent } from '@/components/modules/group/AutoGroupDialog';
+import { AutoRebuildDialogContent } from '@/components/modules/group/AutoRebuildDialog';
 import { CreateDialogContent as ModelCreateContent } from '@/components/modules/model/Create';
 import { useSiteUIStore } from '@/components/modules/site/ui-store';
 import { useLogUIStore } from '@/components/modules/log/ui-store';
@@ -129,6 +131,7 @@ export function Toolbar() {
     const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [autoGroupDialogOpen, setAutoGroupDialogOpen] = useState(false);
+    const [autoRebuildDialogOpen, setAutoRebuildDialogOpen] = useState(false);
 
     const searchExpanded = expandedSearchItem === toolbarItem;
 
@@ -189,9 +192,16 @@ export function Toolbar() {
         if (toolbarItem === 'group') {
             result.push(
                 {
+                    id: 'auto-rebuild',
+                    icon: <Boxes className="size-4" />,
+                    label: '一键按模型建组',
+                    onClick: () => setAutoRebuildDialogOpen(true),
+                    priority: 'desktop',
+                },
+                {
                     id: 'auto-group',
                     icon: <WandSparkles className="size-4" />,
-                    label: '自动分组',
+                    label: '自动分组配置',
                     onClick: () => setAutoGroupDialogOpen(true),
                     priority: 'large',
                 },
@@ -539,6 +549,22 @@ export function Toolbar() {
                         <MorphingDialogContainer>
                             <MorphingDialogContent className="w-fit max-w-full bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
                                 <CreateDialogContent activeItem={toolbarItem} />
+                            </MorphingDialogContent>
+                        </MorphingDialogContainer>
+                    </MorphingDialog>
+                )}
+
+                {/* 一键按模型建组对话框 */}
+                {toolbarItem === 'group' && (
+                    <MorphingDialog open={autoRebuildDialogOpen} onOpenChange={setAutoRebuildDialogOpen}>
+                        <MorphingDialogTrigger>
+                            <button type="button" className="hidden">
+                                Hidden trigger
+                            </button>
+                        </MorphingDialogTrigger>
+                        <MorphingDialogContainer>
+                            <MorphingDialogContent className="w-fit max-w-full bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
+                                <AutoRebuildDialogContent onClose={() => setAutoRebuildDialogOpen(false)} />
                             </MorphingDialogContent>
                         </MorphingDialogContainer>
                     </MorphingDialog>

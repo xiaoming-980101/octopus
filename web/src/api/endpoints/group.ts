@@ -40,6 +40,7 @@ export interface Group {
     pinned?: boolean;
     pinned_at?: string | null;
     active_preset_id?: number | null;
+    disabled?: boolean;
     items?: GroupItem[];
 }
 
@@ -117,6 +118,7 @@ export interface GroupUpdateRequest {
     session_keep_time?: number;           // 仅在会话保持时间变更时发送
     retry_enabled?: boolean;              // 仅在同通道重试开关变更时发送
     max_retries?: number;                 // 仅在最大重试次数变更时发送
+    disabled?: boolean;                   // 仅在禁用状态变更时发送
     items_to_add?: GroupItemAddRequest[];    // 新增的 items
     items_to_update?: GroupItemUpdateRequest[]; // 更新的 items (priority 变更)
     items_to_delete?: number[];              // 删除的 item IDs
@@ -536,4 +538,124 @@ export function useToggleGroupPin() {
         onError: (error) => logger.error('置顶切换失败:', error),
     });
 }
+
+export interface GroupAutoRebuildResult {
+    created_groups: number;
+    updated_groups: number;
+    added_items: number;
+    total_groups: number;
+}
+
+export interface GroupAutoRebuildOptions {
+    /** 去除 Provider 前缀：z-ai/glm-5.2 → glm-5.2，并自动设置 MatchRegex */
+    strip_provider_prefix: boolean;
+    /** free 模型权重提升（0=不启用，典型值 5~10） */
+    free_model_weight: number;
+}
+
+/**
+ * 一键按模型自动建组 Hook
+ */
+export function useAutoRebuildAllGroups() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (opts: GroupAutoRebuildOptions) => {
+            return apiClient.post<GroupAutoRebuildResult>('/api/v1/group/auto-rebuild-all', opts);
+        },
+        onSuccess: (data) => {
+            logger.log('一键按模型自动建组成功:', data);
+            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
+            queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
+        },
+        onError: (error) => {
+            logger.error('一键按模型自动建组失败:', error);
+        },
+    });
+}
+
+/**
+ * 一键删除所有分组 Hook
+ */
+export function useDeleteAllGroups() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async () => {
+            return apiClient.delete<{ deleted: number }>('/api/v1/group/delete-all');
+        },
+        onSuccess: (data) => {
+            logger.log('一键删除所有分组成功，共删除:', data?.deleted);
+            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
+        },
+        onError: (error) => {
+            logger.error('一键删除所有分组失败:', error);
+        },
+    });
+}
+
+/**
+ * 批量删除选中分组 Hook
+ */
+export function useBatchDeleteGroups() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (ids: number[]) => {
+            return apiClient.post<{ deleted: number }>('/api/v1/group/batch-delete', { ids });
+        },
+        onSuccess: (data) => {
+            logger.log('批量删除分组成功，共删除:', data?.deleted);
+            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
+        },
+        onError: (error) => {
+            logger.error('批量删除分组失败:', error);
+        },
+    });
+}
+
+/**
+ * 批量禁用选中分组 Hook
+ */
+export function useBatchDisableGroups() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (ids: number[]) => {
+            return apiClient.post<{ updated: number }>('/api/v1/group/batch-disable', { ids });
+        },
+        onSuccess: (data) => {
+            logger.log('批量禁用分组成功，共更新:', data?.updated);
+            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
+        },
+        onError: (error) => {
+            logger.error('批量禁用分组失败:', error);
+        },
+    });
+}
+
+/**
+ * 批量启用选中分组 Hook
+ */
+export function useBatchEnableGroups() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (ids: number[]) => {
+            return apiClient.post<{ updated: number }>('/api/v1/group/batch-enable', { ids });
+        },
+        onSuccess: (data) => {
+            logger.log('批量启用分组成功，共更新:', data?.updated);
+            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
+        },
+        onError: (error) => {
+            logger.error('批量启用分组失败:', error);
+        },
+    });
+}
+
+
+
+
+
 

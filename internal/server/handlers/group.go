@@ -33,8 +33,29 @@ func init() {
 		AddRoute(
 			router.NewRoute("/delete/:id", http.MethodDelete).
 				Handle(deleteGroup),
+		).
+		AddRoute(
+			router.NewRoute("/auto-rebuild-all", http.MethodPost).
+				Handle(autoRebuildAllGroups),
+		).
+		AddRoute(
+			router.NewRoute("/delete-all", http.MethodDelete).
+				Handle(deleteAllGroups),
+		).
+		AddRoute(
+			router.NewRoute("/batch-delete", http.MethodPost).
+				Handle(batchDeleteGroups),
+		).
+		AddRoute(
+			router.NewRoute("/batch-disable", http.MethodPost).
+				Handle(batchDisableGroups),
+		).
+		AddRoute(
+			router.NewRoute("/batch-enable", http.MethodPost).
+				Handle(batchEnableGroups),
 		)
 }
+
 
 func getGroupList(c *gin.Context) {
 	groups, err := op.GroupList(c.Request.Context())
@@ -99,3 +120,76 @@ func deleteGroup(c *gin.Context) {
 	}
 	resp.Success(c, "group deleted successfully")
 }
+
+func autoRebuildAllGroups(c *gin.Context) {
+	var opts model.GroupAutoRebuildOptions
+	// 忽略解析错误，用零值（精确模式）作为默认值
+	_ = c.ShouldBindJSON(&opts)
+	result, err := op.GroupAutoRebuildAll(c.Request.Context(), opts)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, result)
+}
+
+func deleteAllGroups(c *gin.Context) {
+	deleted, err := op.GroupDelAll(c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"deleted": deleted})
+}
+
+func batchDeleteGroups(c *gin.Context) {
+	var req struct {
+		IDs []int `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.InvalidJSON(c)
+		return
+	}
+	deleted, err := op.GroupBatchDelete(c.Request.Context(), req.IDs)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"deleted": deleted})
+}
+
+func batchDisableGroups(c *gin.Context) {
+	var req struct {
+		IDs []int `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.InvalidJSON(c)
+		return
+	}
+	updated, err := op.GroupBatchSetDisabled(c.Request.Context(), req.IDs, true)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"updated": updated})
+}
+
+func batchEnableGroups(c *gin.Context) {
+	var req struct {
+		IDs []int `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.InvalidJSON(c)
+		return
+	}
+	updated, err := op.GroupBatchSetDisabled(c.Request.Context(), req.IDs, false)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"updated": updated})
+}
+
+
+
+

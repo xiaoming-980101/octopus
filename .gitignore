@@ -11,3 +11,5 @@ static/out/
 docs/
 CONTEXT.md
 .impeccable.md
+scratch/
+*.tar.gz

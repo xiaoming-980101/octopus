@@ -72,7 +72,15 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
     );
 }
 
-export function GroupCard({ group }: { group: Group }) {
+export function GroupCard({
+    group,
+    isSelected,
+    onToggleSelect,
+}: {
+    group: Group;
+    isSelected?: boolean;
+    onToggleSelect?: (id: number) => void;
+}) {
     const t = useTranslations('group');
     const updateGroup = useUpdateGroup();
     const deleteGroup = useDeleteGroup();
@@ -286,9 +294,22 @@ export function GroupCard({ group }: { group: Group }) {
         });
     }, [group.first_token_time_out, group.session_keep_time, group.retry_enabled, group.max_retries, group.id, group.items, group.match_regex, group.mode, group.name, onSuccess, onError, updateGroup]);
 
+    const groupId = group.id;
+
     return (
-        <article className="relative group/card flex flex-col rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow">
+        <article className={cn(
+            "relative group/card flex flex-col rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow transition-all",
+            isSelected && "ring-2 ring-primary border-primary bg-primary/5"
+        )}>
             <header className="flex items-start justify-between mb-3 relative overflow-visible rounded-xl -mx-1 px-1 -my-1 py-1">
+                {onToggleSelect && groupId !== undefined && (
+                    <input
+                        type="checkbox"
+                        checked={!!isSelected}
+                        onChange={() => onToggleSelect(groupId)}
+                        className="size-4 accent-primary cursor-pointer shrink-0 mt-1 mr-2"
+                    />
+                )}
                 <div className="relative flex-1 mr-2 min-w-0 group/title">
                     <Tooltip side="top" sideOffset={10} align="center">
                         <TooltipTrigger asChild>
